@@ -34,9 +34,11 @@ jobs:
         id: pages
         uses: actions/configure-pages@v5
         with:
-          # Create the Pages site via the API if it doesn't exist yet, instead
-          # of failing with "Get Pages site failed". Needs the `pages: write`
-          # permission above — and, on the Free plan, a public repository.
+          # Best-effort: creates the Pages site if it doesn't exist. GITHUB_TOKEN
+          # usually *cannot* do this ("Resource not accessible by integration"),
+          # so the site must be created once by hand:
+          #   Settings → Pages → Build and deployment → Source: GitHub Actions
+          # After that this is a no-op, because the site lookup succeeds.
           enablement: true
 
       - name: Build

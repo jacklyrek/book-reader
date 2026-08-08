@@ -107,10 +107,18 @@ because the third case is a guess. Forced alignment is explicitly not v1.
 ## Hosting on GitHub Pages
 
 Works, and [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) does
-it on every push to `main` (build → test → deploy). Enable it under
-**Settings → Pages → Source: GitHub Actions**. Pages serves HTTPS, which is
+it on every push to `main` (build → test → deploy). Pages serves HTTPS, which is
 what service workers and home-screen install require, and the app uses a hash
 router so there's no SPA-rewrite problem.
+
+**Two one-time setup steps, both required before the first deploy succeeds:**
+
+1. The repo must be **public** — GitHub Free only serves Pages from public
+   repositories.
+2. **Settings → Pages → Build and deployment → Source: GitHub Actions.** The
+   workflow cannot do this for you: `GITHUB_TOKEN` isn't permitted to create a
+   Pages site, so `configure-pages` fails with *"Resource not accessible by
+   integration"* until the site exists. Create it here, then re-run the job.
 
 **But pick your repo shape deliberately — it decides your storage quota.**
 
