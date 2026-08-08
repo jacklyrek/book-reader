@@ -91,6 +91,32 @@ test('every chrome route renders without throwing', async () => {
   }
 })
 
+test('a book opened from search keeps a route back to that search', async () => {
+  navigate({ name: 'search', query: 'moby dick' })
+  navigate({ name: 'book', workId: 'gutenberg:2701' })
+  const root = mount()
+  await flush()
+
+  // In the app bar, so it survives the detail failing to load.
+  const back = root.querySelector<HTMLAnchorElement>('.app-back')
+  assert.ok(back, 'a pushed detail screen should offer a back link')
+  assert.equal(back.getAttribute('href'), '#/search?q=moby%20dick')
+
+  // The Search tab is the other way back, and it must not clear the query.
+  const searchTab = [...root.querySelectorAll<HTMLAnchorElement>('.tab')].find((tab) =>
+    tab.textContent?.includes('Search'),
+  )
+  assert.equal(searchTab?.getAttribute('href'), '#/search?q=moby%20dick')
+})
+
+test('a tab screen shows no back link', async () => {
+  navigate({ name: 'book', workId: 'gutenberg:2701' })
+  navigate({ name: 'library' })
+  const root = mount()
+  await flush()
+  assert.equal(root.querySelector('.app-back'), null)
+})
+
 test('the now-playing bar stays hidden until something is loaded', async () => {
   navigate({ name: 'library' })
   const root = mount()

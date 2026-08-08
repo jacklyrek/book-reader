@@ -110,7 +110,16 @@ export function Bytes({ value }: { value: number }): JSX.Element {
   return <span class="bytes">{formatBytes(value)}</span>
 }
 
-/** Bottom sheet. Modal, dismissable by backdrop tap, and safe-area aware. */
+/** Past this much of its own height, or this fast, a dragged sheet dismisses. */
+const SHEET_CLOSE_FRACTION = 0.3
+const SHEET_FLICK_VELOCITY = 0.5 // px/ms
+const SHEET_CLOSE_MS = 180
+
+/**
+ * Bottom sheet. Modal, dismissable by backdrop tap, Escape, or dragging the
+ * grabber down — the grabber is the affordance, so it has to actually drag.
+ * Safe-area aware.
+ */
 export function Sheet({
   open,
   onClose,
@@ -123,6 +132,10 @@ export function Sheet({
   children: ComponentChildren
 }): JSX.Element | null {
   const ref = useRef<HTMLDivElement>(null)
+  const drag = useRef<{ pointer: number; startY: number; y: number; t: number; v: number } | null>(
+    null,
+  )
+  const closeTimer = useRef<number | null>(null)
 
   useEffect(() => {
     if (!open) return
@@ -138,6 +151,79 @@ export function Sheet({
     }
   }, [open, onClose])
 
+  // A drag-out animation outlives the pointer; don't let it fire into a sheet
+  // that has since been reopened.
+  useEffect(
+    () => () => {
+      if (closeTimer.current !== null) clearTimeout(closeTimer.current)
+    },
+    [],
+  )
+
+  const onPointerDown = (event: JSX.TargetedPointerEvent<HTMLDivElement>) => {
+    const el = ref.current
+    if (!el || event.button > 0 || closeTimer.current !== null) return
+    drag.current = {
+      pointer: event.pointerId,
+      startY: event.clientY,
+      y: event.clientY,
+      t: event.timeStamp,
+      v: 0,
+    }
+    event.currentTarget.setPointerCapture(event.pointerId)
+    // The entrance keyframes animate `transform` too, and would win over the
+    // inline one we're about to set.
+    el.style.animation = 'none'
+    el.style.transition = 'none'
+  }
+
+  const onPointerMove = (event: JSX.TargetedPointerEvent<HTMLDivElement>) => {
+    const state = drag.current
+    const el = ref.current
+    if (!state || !el || event.pointerId !== state.pointer) return
+    const elapsed = event.timeStamp - state.t
+    if (elapsed > 0) {
+      state.v = (event.clientY - state.y) / elapsed
+      state.y = event.clientY
+      state.t = event.timeStamp
+    }
+    // The sheet is already against the bottom, so up has nowhere to go.
+    el.style.transform = `translateY(${Math.max(0, event.clientY - state.startY)}px)`
+  }
+
+  const onPointerUp = (event: JSX.TargetedPointerEvent<HTMLDivElement>) => {
+    const state = drag.current
+    const el = ref.current
+    if (!state || !el || event.pointerId !== state.pointer) return
+    drag.current = null
+
+    const travelled = Math.max(0, event.clientY - state.startY)
+    const height = el.getBoundingClientRect().height
+    const dismiss =
+      travelled > height * SHEET_CLOSE_FRACTION ||
+      (state.v > SHEET_FLICK_VELOCITY && travelled > 0)
+
+    if (!dismiss) {
+      el.style.transition = ''
+      el.style.transform = ''
+      return
+    }
+
+    const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (reduced) {
+      onClose()
+      return
+    }
+    // Finish the gesture before unmounting, or the sheet vanishes from
+    // wherever the finger left it.
+    el.style.transition = `transform ${SHEET_CLOSE_MS}ms ease-out`
+    el.style.transform = `translateY(${height}px)`
+    closeTimer.current = window.setTimeout(() => {
+      closeTimer.current = null
+      onClose()
+    }, SHEET_CLOSE_MS)
+  }
+
   if (!open) return null
 
   return (
@@ -150,8 +236,16 @@ export function Sheet({
         aria-label={title}
         onClick={(event) => event.stopPropagation()}
       >
-        <div class="sheet-grabber" />
-        {title ? <h2 class="sheet-title">{title}</h2> : null}
+        <div
+          class="sheet-handle"
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
+        >
+          <div class="sheet-grabber" />
+          {title ? <h2 class="sheet-title">{title}</h2> : null}
+        </div>
         <div class="sheet-body">{children}</div>
       </div>
     </div>

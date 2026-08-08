@@ -29,6 +29,21 @@ export function normalizeTitle(title: string): string {
     .trim()
 }
 
+/**
+ * The one part of a name every catalog agrees on.
+ *
+ * Gutendex files authors as "Machiavelli, Niccolò" and LibriVox matches its
+ * `author` parameter against the surname alone, so "Niccolo Machiavelli" finds
+ * nothing in either until it's cut down to "Machiavelli". Single-name authors
+ * (Homer, Montesquieu, Virgil) pass through untouched.
+ */
+export function surname(author: string): string {
+  const trimmed = author.trim()
+  if (trimmed.includes(',')) return trimmed.split(',')[0]?.trim() || trimmed
+  const parts = trimmed.split(/\s+/)
+  return parts[parts.length - 1] ?? trimmed
+}
+
 export function normalizeAuthor(author: string): string {
   // Catalogs disagree on "Melville, Herman" vs "Herman Melville".
   const flipped = author.includes(',')

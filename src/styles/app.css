@@ -87,9 +87,21 @@ textarea {
 /* --- layout --------------------------------------------------------------- */
 
 .app {
+  /*
+   * Fixed + inset rather than `100dvh`, matching .reader-screen.
+   *
+   * `env(safe-area-inset-*)` is measured against the layout viewport, which
+   * `viewport-fit=cover` extends to the physical screen edges — and which is
+   * exactly what `inset: 0` resolves to. `dvh` is a different box, and in an
+   * installed iOS PWA it stops short of the home indicator, so the shell ended
+   * above the bottom of the screen and iOS painted the uncovered strip with the
+   * manifest's background_color. The tab bar's own background has to reach the
+   * screen edge; its safe-area padding is what lifts the buttons clear.
+   */
+  position: fixed;
+  inset: 0;
   display: grid;
   grid-template-rows: auto 1fr auto auto;
-  height: 100dvh;
 }
 
 .app-bar {
@@ -102,8 +114,31 @@ textarea {
   background: var(--bg);
 }
 
+.app-back {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 15px;
+}
+
+.app-back-glyph {
+  font-size: 20px;
+  line-height: 1;
+}
+
 .app-title {
   margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   font-size: 22px;
   font-weight: 650;
   letter-spacing: -0.01em;
@@ -588,6 +623,25 @@ textarea {
   line-height: 1.4;
 }
 
+/* The author a curated shelf sent us here with, and the way back out of it. */
+.search-scope {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+
+.search-scope strong {
+  color: var(--fg);
+}
+
+.search-scope .link-button {
+  flex: none;
+}
+
 .segmented {
   display: grid;
   grid-auto-flow: column;
@@ -923,12 +977,28 @@ textarea {
   }
 }
 
+/* The drag region for dismissing the sheet. `touch-action: none` is required:
+   without it the browser claims the vertical pan and no pointermove arrives. */
+.sheet-handle {
+  flex: none;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  /* Stands in for the grabber's old top margin, and widens a 4px touch target. */
+  padding-top: 4px;
+}
+
+.sheet-handle:active {
+  cursor: grabbing;
+}
+
 .sheet-grabber {
   width: 36px;
   height: 4px;
   border-radius: 999px;
   background: var(--line);
-  margin: 4px auto 10px;
+  margin: 0 auto 10px;
 }
 
 .sheet-title {

@@ -115,7 +115,10 @@ export function CollectionDetail({ id }: { id: string }): JSX.Element {
             ) : (
               <a
                 class="shelf-entry shelf-entry-missing"
-                href={hrefFor({ name: 'search', query: `${entry.title} ${entry.author}` })}
+                // Title and author as separate fields. Glued into one string
+                // they read as a title no catalog has, and the search comes back
+                // empty for a book that is definitely there.
+                href={hrefFor({ name: 'search', query: entry.title, author: entry.author })}
               >
                 <span class="cover cover-sm cover-fallback cover-empty" aria-hidden="true" />
                 <span class="shelf-entry-text">

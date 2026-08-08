@@ -7,7 +7,14 @@
  */
 import { supabase, supabaseConfigured } from '../core/supabase-client'
 import type { CatalogWork } from '../core/types'
-import { rankEditions, type CatalogAdapter, type SearchOptions } from './adapter'
+import {
+  attemptsFor,
+  rankEditions,
+  scoreResult,
+  type CatalogAdapter,
+  type SearchOptions,
+} from './adapter'
+import { dedupeById } from './match'
 
 export { supabaseConfigured }
 
@@ -36,14 +43,35 @@ export const supabaseCatalog: CatalogAdapter = {
   async search(query: string, options: SearchOptions = {}) {
     const sb = supabase()
     if (!sb) return []
-    const { data, error } = await sb.rpc('search_catalog', {
-      q: query,
-      lang: options.language ?? null,
-      kind: options.filter ?? 'all',
-      lim: options.limit ?? 40,
-    })
-    if (error) throw new Error(`catalog search failed: ${error.message}`)
-    return ((data as unknown[]) ?? []).map(coerce).filter((w): w is CatalogWork => w !== null)
+
+    // The RPC takes one text query and its `websearch_to_tsquery` ANDs the
+    // terms, so a title-and-author search needs the same widening the live
+    // adapter does rather than a schema change.
+    let works: CatalogWork[] = []
+    for (const rung of attemptsFor(query, options.author)) {
+      const pages = await Promise.all(
+        rung.map(async (attempt) => {
+          const { data, error } = await sb.rpc('search_catalog', {
+            q: attempt,
+            lang: options.language ?? null,
+            kind: options.filter ?? 'all',
+            lim: options.limit ?? 40,
+          })
+          if (error) throw new Error(`catalog search failed: ${error.message}`)
+          return ((data as unknown[]) ?? []).map(coerce).filter((w): w is CatalogWork => w !== null)
+        }),
+      )
+      works = dedupeById(pages.flat())
+      if (works.length > 0) break
+    }
+
+    // The index ranks against whichever query answered; when that was the
+    // widened one, it ranked by author and knows nothing of the title we want.
+    return options.author
+      ? works.sort(
+          (a, b) => scoreResult(b, query, options.author) - scoreResult(a, query, options.author),
+        )
+      : works
   },
 
   async getWork(workId: string) {

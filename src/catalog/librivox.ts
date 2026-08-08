@@ -6,7 +6,7 @@
  * Narration quality is wildly variable, which is why `readers` is surfaced
  * everywhere and `settings.narratorBlocklist` exists.
  */
-import { bookIdFor } from '../core/ids'
+import { bookIdFor, surname } from '../core/ids'
 import type { AudioRecording, AudioTrack, CatalogWork } from '../core/types'
 import { fetchJson } from './proxy'
 
@@ -180,14 +180,24 @@ async function query(params: Record<string, string>, signal?: AbortSignal): Prom
   return response.books ?? []
 }
 
+/**
+ * LibriVox catalogues titles with the leading article dropped — "Odyssey", not
+ * "The Odyssey" — so a prefix search for the title as everyone else writes it
+ * matches nothing at all.
+ */
+function searchableTitle(title: string): string {
+  return title.replace(/^(the|a|an)\s+/i, '').trim() || title.trim()
+}
+
 export async function searchLibriVox(q: LibriVoxQuery, signal?: AbortSignal): Promise<CatalogWork[]> {
   const params: Record<string, string> = {
     limit: String(q.limit ?? 20),
     offset: String(q.offset ?? 0),
   }
   // `^` asks the API for a prefix match rather than an exact one.
-  if (q.title) params['title'] = `^${q.title}`
-  if (q.author) params['author'] = `^${q.author}`
+  if (q.title) params['title'] = `^${searchableTitle(q.title)}`
+  // The author field is indexed on the surname; a full name never matches.
+  if (q.author) params['author'] = `^${surname(q.author)}`
   if (q.extended ?? false) params['extended'] = '1'
 
   const books = await query(params, signal)

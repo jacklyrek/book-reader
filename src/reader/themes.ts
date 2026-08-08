@@ -164,13 +164,18 @@ export function readerCss(settings: Settings): string {
  * Attributes on the paginator element. `max-inline-size` is the measure: past
  * ~40em a line is tiring to read, and on an iPhone in landscape two columns
  * beat one very wide one.
+ *
+ * It must be given in px. foliate reads the attribute back with `parseFloat`,
+ * so a unit it doesn't understand is silently dropped — `40em` becomes 40, and
+ * in scrolled flow that number is used as the body width verbatim, leaving a
+ * 40px column. So resolve the em against the reader's own font size here.
  */
 export function paginatorAttributes(settings: Settings): Record<string, string> {
   return {
     flow: settings.flow,
     gap: '6%',
     margin: `${settings.margin}px`,
-    'max-inline-size': '40em',
+    'max-inline-size': `${Math.round(settings.fontSize * 40)}px`,
     'max-block-size': '100%',
     'max-column-count': settings.flow === 'paginated' ? '2' : '1',
   }

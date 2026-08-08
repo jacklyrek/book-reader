@@ -7,10 +7,16 @@
  * interface and the choice is made by whether Supabase is configured.
  */
 import type { CatalogWork } from '../core/types'
-import { rankEditions, scoreResult, type CatalogAdapter, type SearchOptions } from './adapter'
+import {
+  attemptsFor,
+  rankEditions,
+  scoreResult,
+  type CatalogAdapter,
+  type SearchOptions,
+} from './adapter'
 import { searchGutenberg, getGutenbergBook } from './gutendex'
 import { getLibriVoxBook, loadTracks, searchLibriVox } from './librivox'
-import { dedupeEditions, mergeWorks } from './match'
+import { dedupeById, dedupeEditions, mergeWorks } from './match'
 import { newReleases, searchStandardEbooks } from './standardebooks'
 import { supabaseCatalog, supabaseConfigured } from './supabase'
 
@@ -25,27 +31,21 @@ const liveCatalog: CatalogAdapter = {
   name: 'live',
 
   async search(query, options = {}) {
-    const { signal, filter = 'all', limit = 40 } = options
-    const wantText = filter !== 'audio'
-    const wantAudio = filter !== 'text'
+    const { signal, filter = 'all', limit = 40, author } = options
 
-    const [se, gutenberg, librivox] = await Promise.all([
-      wantText ? settle(searchStandardEbooks(query, signal)) : [],
-      wantText ? settle(searchGutenberg({ search: query, sort: 'popular' }, signal)) : [],
-      wantAudio ? settle(searchLibriVox({ title: query, limit: 20 }, signal)) : [],
+    const [texts, audio] = await Promise.all([
+      filter === 'audio' ? [] : searchText(query, author, signal),
+      filter === 'text' ? [] : searchAudio(query, author, signal),
     ])
 
-    const textWorks = dedupeEditions([...se, ...gutenberg])
-    const works = mergeWorks(textWorks, librivox)
-    const filtered = works.filter((w) => {
-      if (filter === 'audio') return w.recordings.length > 0
-      if (filter === 'text') return w.editions.length > 0
-      return true
-    })
-
-    return filtered
+    return mergeWorks(texts, audio)
+      .filter((w) => {
+        if (filter === 'audio') return w.recordings.length > 0
+        if (filter === 'text') return w.editions.length > 0
+        return true
+      })
       .map(rankEditions)
-      .sort((a, b) => scoreResult(b, query) - scoreResult(a, query))
+      .sort((a, b) => scoreResult(b, query, author) - scoreResult(a, query, author))
       .slice(0, limit)
   },
 
@@ -73,11 +73,52 @@ const liveCatalog: CatalogAdapter = {
   },
 }
 
+/**
+ * Gutendex and Standard Ebooks take one free-text query, so a title-and-author
+ * search has to be asked as a string and widened if that comes back empty.
+ */
+async function searchText(
+  query: string,
+  author: string | undefined,
+  signal?: AbortSignal,
+): Promise<CatalogWork[]> {
+  for (const rung of attemptsFor(query, author)) {
+    const found = await Promise.all(
+      rung.flatMap((attempt) => [
+        settle(searchStandardEbooks(attempt, signal)),
+        settle(searchGutenberg({ search: attempt, sort: 'popular' }, signal)),
+      ]),
+    )
+    const works = dedupeEditions(found.flat())
+    if (works.length > 0) return works
+  }
+  return []
+}
+
+/**
+ * LibriVox matches per field rather than over free text, so it takes the title
+ * and the author as they were given and never needs the widening above. Both
+ * have to be asked: on the title alone — which is all this used to do —
+ * searching for a writer never turns up a single recording of theirs.
+ */
+async function searchAudio(
+  title: string,
+  author: string | undefined,
+  signal?: AbortSignal,
+): Promise<CatalogWork[]> {
+  const [byTitle, byAuthor] = await Promise.all([
+    settle(searchLibriVox({ title, limit: 20 }, signal)),
+    settle(searchLibriVox({ author: author ?? title, limit: 20 }, signal)),
+  ])
+  return dedupeById([...byTitle, ...byAuthor])
+}
+
 /** A text work opened cold: go find whether LibriVox has a reading of it. */
 async function attachAudio(work: CatalogWork, signal?: AbortSignal): Promise<CatalogWork> {
   if (work.recordings.length > 0) return work
-  const candidates = await settle(searchLibriVox({ title: work.title, limit: 10 }, signal))
-  const merged = mergeWorks([work], candidates)
+  // LibriVox retitles freely ("Moby Dick, or the Whale"), so the author's shelf
+  // is often the only way to reach the recording.
+  const merged = mergeWorks([work], await searchAudio(work.title, work.authors[0], signal))
   return rankEditions(merged[0] ?? work)
 }
 

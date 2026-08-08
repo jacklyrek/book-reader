@@ -1,5 +1,6 @@
 import type { JSX } from 'preact'
-import { hrefFor, route } from './core/router'
+import type { Route } from './core/router'
+import { hrefFor, previousRoute, route, searchRoute } from './core/router'
 import { useStore } from './core/store'
 import { syncState } from './core/sync'
 import { AnnotationsView } from './ui/AnnotationsView'
@@ -26,6 +27,15 @@ const TITLES: Record<string, string> = {
   annotations: 'Highlights',
 }
 
+/** Screens pushed on top of a tab, rather than being one. */
+const PUSHED = new Set(['book', 'collection', 'annotations'])
+
+/** Name the destination, so "back" says what you're going back to. */
+function backLabel(target: Route): string {
+  if (target.name === 'search') return target.query || target.author || 'Search'
+  return TITLES[target.name] ?? 'Back'
+}
+
 export function App(): JSX.Element {
   const current = useStore(route)
   const sync = useStore(syncState)
@@ -34,9 +44,21 @@ export function App(): JSX.Element {
   if (current.name === 'read') return <ReaderView bookId={current.bookId} />
   if (current.name === 'listen') return <PlayerView bookId={current.bookId} />
 
+  // In the bar rather than in each view, so it's there while the view is still
+  // loading or has failed to find the book.
+  const back = PUSHED.has(current.name) ? previousRoute() : null
+
   return (
     <div class="app">
       <header class="app-bar">
+        {back ? (
+          <a class="app-back" href={hrefFor(back)}>
+            <span class="app-back-glyph" aria-hidden="true">
+              ‹
+            </span>
+            {backLabel(back)}
+          </a>
+        ) : null}
         <h1 class="app-title">{TITLES[current.name] ?? 'Reader'}</h1>
         {sync.status === 'offline' ? <span class="sync-chip">offline</span> : null}
         {sync.pending > 0 ? <span class="sync-chip">{sync.pending} unsynced</span> : null}
@@ -44,7 +66,9 @@ export function App(): JSX.Element {
 
       <main class="app-main">
         {current.name === 'library' ? <Library /> : null}
-        {current.name === 'search' ? <Search initialQuery={current.query} /> : null}
+        {current.name === 'search' ? (
+          <Search initialQuery={current.query} initialAuthor={current.author} />
+        ) : null}
         {current.name === 'book' ? <BookDetail workId={current.workId} /> : null}
         {current.name === 'downloads' ? <Downloads /> : null}
         {current.name === 'storage' ? <StorageView /> : null}
@@ -58,7 +82,7 @@ export function App(): JSX.Element {
 
       <nav class="tab-bar" aria-label="Main">
         <TabLink href={hrefFor({ name: 'library' })} active={current.name === 'library'} label="Library" glyph="▤" />
-        <TabLink href={hrefFor({ name: 'search', query: '' })} active={current.name === 'search' || current.name === 'book'} label="Search" glyph="⌕" />
+        <TabLink href={hrefFor(searchRoute())} active={current.name === 'search' || current.name === 'book'} label="Search" glyph="⌕" />
         <TabLink
           href={hrefFor({ name: 'collections' })}
           active={current.name === 'collections' || current.name === 'collection'}

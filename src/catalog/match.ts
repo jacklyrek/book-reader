@@ -102,6 +102,13 @@ export function mergeWorks(textWorks: CatalogWork[], audioWorks: CatalogWork[]):
   return merged
 }
 
+/** Drop repeats when two queries against one source overlap. */
+export function dedupeById(works: CatalogWork[]): CatalogWork[] {
+  const seen = new Map<string, CatalogWork>()
+  for (const work of works) if (!seen.has(work.workId)) seen.set(work.workId, work)
+  return [...seen.values()]
+}
+
 /**
  * Collapse the same text across sources into one work, keeping every edition.
  * Ranking (Standard Ebooks first) happens at render time via SOURCE_RANK.

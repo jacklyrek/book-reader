@@ -9,8 +9,18 @@ import { formatDuration } from '../player/player'
 
 type Filter = 'all' | 'text' | 'audio'
 
-export function Search({ initialQuery }: { initialQuery: string }): JSX.Element {
+export function Search({
+  initialQuery,
+  initialAuthor,
+}: {
+  initialQuery: string
+  initialAuthor?: string
+}): JSX.Element {
   const [query, setQuery] = useState(initialQuery)
+  // Arrived at from a curated shelf, which knows who wrote the book it wants.
+  // Kept across edits so the shelf link doubles as "browse this author", and
+  // dropped only when the reader dismisses it.
+  const [author, setAuthor] = useState(initialAuthor)
   const [filter, setFilter] = useState<Filter>('all')
   const [results, setResults] = useState<CatalogWork[]>([])
   const [featured, setFeatured] = useState<CatalogWork[]>([])
@@ -37,7 +47,9 @@ export function Search({ initialQuery }: { initialQuery: string }): JSX.Element 
 
   useEffect(() => {
     const trimmed = query.trim()
-    if (trimmed.length < 2) {
+    // A named author is a search in its own right, so a short title beside one
+    // is still worth running.
+    if (trimmed.length < 2 && !author) {
       setResults([])
       setLoading(false)
       return
@@ -48,7 +60,7 @@ export function Search({ initialQuery }: { initialQuery: string }): JSX.Element 
       setLoading(true)
       setError(null)
       catalog
-        .search(trimmed, { signal: controller.signal, filter })
+        .search(trimmed, { signal: controller.signal, filter, author })
         .then((works) => {
           setResults(works)
           setLoading(false)
@@ -58,16 +70,16 @@ export function Search({ initialQuery }: { initialQuery: string }): JSX.Element 
           setError(cause instanceof Error ? cause : new Error(String(cause)))
           setLoading(false)
         })
-      navigate({ name: 'search', query: trimmed }, true)
+      navigate({ name: 'search', query: trimmed, author }, true)
     }, 350)
 
     return () => {
       controller.abort()
       clearTimeout(timer)
     }
-  }, [query, filter])
+  }, [query, filter, author])
 
-  const showFeatured = query.trim().length < 2
+  const showFeatured = query.trim().length < 2 && !author
 
   return (
     <div class="search">
@@ -85,6 +97,17 @@ export function Search({ initialQuery }: { initialQuery: string }): JSX.Element 
           onInput={(event) => setQuery((event.currentTarget as HTMLInputElement).value)}
         />
       </div>
+
+      {author ? (
+        <p class="search-scope">
+          <span>
+            by <strong>{author}</strong>
+          </span>
+          <button type="button" class="link-button" onClick={() => setAuthor(undefined)}>
+            Search everything
+          </button>
+        </p>
+      ) : null}
 
       <SegmentedControl<Filter>
         value={filter}
@@ -115,7 +138,14 @@ export function Search({ initialQuery }: { initialQuery: string }): JSX.Element 
           </section>
         ) : null
       ) : !loading && results.length === 0 ? (
-        <Empty title="No matches" body="Try the author's surname, or a shorter title." />
+        <Empty
+          title="No matches"
+          body={
+            author
+              ? `Nothing under ${author} in the public domain catalogs. Try the title on its own.`
+              : "Try the author's surname, or a shorter title."
+          }
+        />
       ) : (
         <ResultList works={results} />
       )}
