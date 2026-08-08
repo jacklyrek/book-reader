@@ -14,6 +14,7 @@ import {
   allBooks,
   deleteOutbox,
   drainableOutbox,
+  enqueueOutbox,
   getBook,
   getProgress,
   putAnnotation,
@@ -240,6 +241,11 @@ async function push(userId: string): Promise<void> {
         await deleteOutbox(item.id)
         continue
       }
+      // `enqueueOutbox` is a keyed put, so this overwrites the row in place
+      // with the bumped count — without it, every retry re-reads the same
+      // stale `tries` from storage and the item can never reach the drop
+      // threshold above, wedging every future push behind it forever.
+      await enqueueOutbox({ ...item, tries })
       // Stop on the first failure: order matters and the network is probably down.
       throw error
     }
