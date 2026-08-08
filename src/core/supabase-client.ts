@@ -1,11 +1,15 @@
 /**
  * Shared Supabase client for catalog reads and sync writes (§6.2, §6.3).
  *
- * Auth (§10 open question) is resolved as **magic link**. A hardcoded
- * long-lived token would be simpler, but it would sit in the client bundle
- * forever with no way to rotate it, and magic link costs one screen. When
- * Supabase is not configured at all, the app runs local-only: everything works
- * except cross-device sync.
+ * Auth (§10 open question) is resolved as **emailed one-time code**, verified
+ * in-app rather than via a clicked link. A hardcoded long-lived token would be
+ * simpler, but it would sit in the client bundle forever with no way to
+ * rotate it. (A clickable magic link was the original plan, but this project
+ * shares its Supabase instance — and its "Magic Link" email template — with
+ * another app that already expects a typed code, so the client verifies the
+ * code instead of relying on the template's link.) When Supabase is not
+ * configured at all, the app runs local-only: everything works except
+ * cross-device sync.
  */
 import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js'
 import { createStore } from './store'
@@ -62,13 +66,15 @@ export async function initAuth(): Promise<void> {
 export async function signInWithEmail(email: string): Promise<void> {
   const sb = supabase()
   if (!sb) throw new Error('Supabase is not configured')
-  const { error } = await sb.auth.signInWithOtp({
-    email,
-    // `location.origin` alone drops the `/<repo>/` base path a GitHub Pages
-    // project site is served under, sending the link to a 404 instead of back
-    // into the app.
-    options: { emailRedirectTo: location.origin + import.meta.env.BASE_URL },
-  })
+  const { error } = await sb.auth.signInWithOtp({ email })
+  if (error) throw error
+}
+
+/** The code from the email `signInWithEmail` sent. */
+export async function verifyEmailOtp(email: string, token: string): Promise<void> {
+  const sb = supabase()
+  if (!sb) throw new Error('Supabase is not configured')
+  const { error } = await sb.auth.verifyOtp({ email, token, type: 'email' })
   if (error) throw error
 }
 

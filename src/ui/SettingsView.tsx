@@ -4,7 +4,13 @@ import { proxyConfigured } from '../catalog/proxy'
 import { catalog } from '../catalog/index'
 import { settings, updateSetting } from '../core/settings'
 import { useStore } from '../core/store'
-import { authState, signInWithEmail, signOut, supabaseConfigured } from '../core/supabase-client'
+import {
+  authState,
+  signInWithEmail,
+  signOut,
+  supabaseConfigured,
+  verifyEmailOtp,
+} from '../core/supabase-client'
 import { fullResync, syncNow, syncState } from '../core/sync'
 import { SegmentedControl, Slider, Toast, Toggle } from './components'
 
@@ -13,6 +19,8 @@ export function SettingsView(): JSX.Element {
   const auth = useStore(authState)
   const sync = useStore(syncState)
   const [email, setEmail] = useState('')
+  const [code, setCode] = useState('')
+  const [codeSent, setCodeSent] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
 
   return (
@@ -124,13 +132,58 @@ export function SettingsView(): JSX.Element {
               </button>
             </div>
           </>
+        ) : codeSent ? (
+          <>
+            <p class="note">Enter the code emailed to {email}.</p>
+            <form
+              class="signin"
+              onSubmit={(event) => {
+                event.preventDefault()
+                void verifyEmailOtp(email, code.trim())
+                  .then(() => {
+                    setCode('')
+                    setCodeSent(false)
+                  })
+                  .catch((error: unknown) =>
+                    setToast(error instanceof Error ? error.message : String(error)),
+                  )
+              }}
+            >
+              <input
+                type="text"
+                inputMode="numeric"
+                autocomplete="one-time-code"
+                placeholder="Code"
+                value={code}
+                onInput={(event) => setCode((event.currentTarget as HTMLInputElement).value)}
+              />
+              <button type="submit" class="button button-small">
+                Verify
+              </button>
+            </form>
+            <div class="button-row">
+              <button
+                type="button"
+                class="button button-small button-quiet"
+                onClick={() => {
+                  setCodeSent(false)
+                  setCode('')
+                }}
+              >
+                Use a different email
+              </button>
+            </div>
+          </>
         ) : (
           <form
             class="signin"
             onSubmit={(event) => {
               event.preventDefault()
               void signInWithEmail(email)
-                .then(() => setToast('Check your email for the sign-in link.'))
+                .then(() => {
+                  setCodeSent(true)
+                  setToast('Check your email for the code.')
+                })
                 .catch((error: unknown) =>
                   setToast(error instanceof Error ? error.message : String(error)),
                 )
@@ -145,7 +198,7 @@ export function SettingsView(): JSX.Element {
               onInput={(event) => setEmail((event.currentTarget as HTMLInputElement).value)}
             />
             <button type="submit" class="button button-small">
-              Send magic link
+              Send code
             </button>
           </form>
         )}
