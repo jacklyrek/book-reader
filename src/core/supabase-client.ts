@@ -64,7 +64,10 @@ export async function signInWithEmail(email: string): Promise<void> {
   if (!sb) throw new Error('Supabase is not configured')
   const { error } = await sb.auth.signInWithOtp({
     email,
-    options: { emailRedirectTo: location.origin },
+    // `location.origin` alone drops the `/<repo>/` base path a GitHub Pages
+    // project site is served under, sending the link to a 404 instead of back
+    // into the app.
+    options: { emailRedirectTo: location.origin + import.meta.env.BASE_URL },
   })
   if (error) throw error
 }
