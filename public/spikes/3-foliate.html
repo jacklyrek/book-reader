@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Spike 3 — foliate-js on iOS</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <link rel="manifest" href="/spikes/manifest.webmanifest" />
+    <style>
+      :root { color-scheme: light dark; }
+      body { font: 16px/1.5 -apple-system, system-ui, sans-serif; margin: 0; padding: 16px; }
+      h1 { font-size: 19px; margin: 0 0 8px; }
+      button { font: inherit; min-height: 40px; padding: 0 12px; border-radius: 10px; border: 1px solid #8886; background: transparent; color: inherit; }
+      .row { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; align-items: center; }
+      #viewer { height: 62vh; border: 1px solid #8886; border-radius: 10px; overflow: hidden; margin: 10px 0; }
+      #log { font: 11px/1.4 ui-monospace, Menlo, monospace; white-space: pre-wrap; background: #8881; padding: 8px; border-radius: 8px; max-height: 22vh; overflow: auto; }
+      .steps { font-size: 13px; background: #8a4b2a22; border-left: 3px solid #8a4b2a; padding: 10px 12px; }
+      input[type=file] { font-size: 14px; }
+    </style>
+  </head>
+  <body>
+    <h1>Spike 3 — foliate-js on iOS Safari</h1>
+
+    <div class="steps">
+      Load a Standard Ebooks EPUB, swipe through pages, change the font size, then press
+      <em>Save CFI</em>, reload the page, and press <em>Restore CFI</em>.
+      <strong>Pass:</strong> pagination is smooth, no blank pages after a resize, and the CFI lands
+      on the same paragraph at a different font size.
+    </div>
+
+    <div class="row">
+      <input type="file" id="file" accept=".epub" />
+      <button id="fetch">Load sample from Standard Ebooks</button>
+    </div>
+
+    <div class="row">
+      <button id="prev">‹ Prev</button>
+      <button id="next">Next ›</button>
+      <button id="smaller">A−</button>
+      <button id="bigger">A+</button>
+      <button id="save">Save CFI</button>
+      <button id="restore">Restore CFI</button>
+      <span id="pos"></span>
+    </div>
+
+    <div id="viewer"></div>
+    <div id="log"></div>
+
+    <script type="module">
+      const logEl = document.getElementById('log')
+      const lines = []
+      function log(message) {
+        lines.push(`${new Date().toLocaleTimeString()}  ${message}`)
+        logEl.textContent = lines.slice(-200).join('\n')
+        logEl.scrollTop = logEl.scrollHeight
+      }
+
+      let view = null
+      let fontSize = 19
+
+      function styles() {
+        return `
+          html, body { font-size: ${fontSize}px !important; line-height: 1.6 !important;
+                       font-family: Georgia, serif !important; }
+          p { text-align: justify !important; -webkit-hyphens: auto !important; hyphens: auto !important; }
+        `
+      }
+
+      async function open(file) {
+        const started = performance.now()
+        try {
+          // Served from the app's own node_modules copy by the dev server; in a
+          // deployed build this path comes from the bundler instead.
+          await import('/node_modules/foliate-js/view.js')
+        } catch (error) {
+          log(`FAILED to import foliate-js: ${error.message}`)
+          log('Run this spike from `npm run dev`, which serves /node_modules.')
+          return
+        }
+
+        document.getElementById('viewer').innerHTML = ''
+        view = document.createElement('foliate-view')
+        document.getElementById('viewer').append(view)
+
+        view.addEventListener('relocate', (event) => {
+          const { fraction, cfi, tocItem } = event.detail
+          document.getElementById('pos').textContent =
+            `${Math.round((fraction ?? 0) * 100)}% · ${tocItem?.label ?? ''}`
+          window.lastCfi = cfi
+        })
+
+        await view.open(file)
+        view.renderer.setAttribute('flow', 'paginated')
+        view.renderer.setAttribute('gap', '6%')
+        view.renderer.setAttribute('max-inline-size', '40em')
+        view.renderer.setAttribute('max-column-count', '2')
+        view.renderer.setStyles(styles())
+        await view.init({ showTextStart: true })
+        log(`opened in ${(performance.now() - started).toFixed(0)}ms · ${view.book.sections.length} sections`)
+      }
+
+      document.getElementById('file').addEventListener('change', (event) => {
+        const file = event.target.files?.[0]
+        if (file) void open(file)
+      })
+
+      document.getElementById('fetch').addEventListener('click', async () => {
+        // Standard Ebooks sends CORS headers on download URLs, so this works
+        // without the proxy.
+        const url =
+          'https://standardebooks.org/ebooks/herman-melville/moby-dick/downloads/herman-melville_moby-dick.epub'
+        log('fetching sample…')
+        try {
+          const response = await fetch(url)
+          if (!response.ok) throw new Error(`HTTP ${response.status}`)
+          const blob = await response.blob()
+          log(`fetched ${(blob.size / 1024 / 1024).toFixed(1)} MB`)
+          await open(new File([blob], 'moby-dick.epub', { type: 'application/epub+zip' }))
+        } catch (error) {
+          log(`fetch failed (${error.message}) — pick a file instead`)
+        }
+      })
+
+      document.getElementById('prev').addEventListener('click', () => view?.prev())
+      document.getElementById('next').addEventListener('click', () => view?.next())
+
+      for (const [id, delta] of [['smaller', -2], ['bigger', 2]]) {
+        document.getElementById(id).addEventListener('click', () => {
+          fontSize = Math.max(12, Math.min(32, fontSize + delta))
+          const started = performance.now()
+          view?.renderer.setStyles(styles())
+          log(`font-size ${fontSize}px, restyled in ${(performance.now() - started).toFixed(0)}ms`)
+        })
+      }
+
+      document.getElementById('save').addEventListener('click', () => {
+        if (!window.lastCfi) return log('no CFI yet — turn a page first')
+        localStorage.setItem('spike-cfi', window.lastCfi)
+        log(`saved: ${window.lastCfi}`)
+      })
+
+      document.getElementById('restore').addEventListener('click', async () => {
+        const cfi = localStorage.getItem('spike-cfi')
+        if (!cfi) return log('nothing saved')
+        if (!view) return log('open a book first')
+        const started = performance.now()
+        await view.goTo(cfi)
+        log(`restored ${cfi} in ${(performance.now() - started).toFixed(0)}ms`)
+      })
+
+      const saved = localStorage.getItem('spike-cfi')
+      if (saved) log(`saved CFI from last run: ${saved}`)
+    </script>
+  </body>
+</html>

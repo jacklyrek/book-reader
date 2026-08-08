@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Spike 1 — Background audio</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <link rel="manifest" href="/spikes/manifest.webmanifest" />
+    <style>
+      :root { color-scheme: light dark; }
+      body { font: 16px/1.5 -apple-system, system-ui, sans-serif; margin: 0 auto; padding: 20px; max-width: 40rem; }
+      h1 { font-size: 20px; }
+      button { font: inherit; min-height: 44px; padding: 0 16px; border-radius: 10px; border: 1px solid #8886; background: transparent; color: inherit; }
+      .row { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+      input[type=url] { font-size: 16px; width: 100%; min-height: 44px; padding: 0 10px; border-radius: 10px; border: 1px solid #8886; background: transparent; color: inherit; }
+      #log { font: 12px/1.4 ui-monospace, Menlo, monospace; white-space: pre-wrap; background: #8881; padding: 10px; border-radius: 8px; max-height: 46vh; overflow: auto; }
+      .verdict { padding: 12px; border-radius: 8px; margin: 12px 0; font-weight: 600; }
+      .pass { background: #3f7d4f33; }
+      .fail { background: #a33a2a33; }
+      .steps { font-size: 14px; background: #8a4b2a22; border-left: 3px solid #8a4b2a; padding: 12px 14px; }
+    </style>
+  </head>
+  <body>
+    <h1>Spike 1 — Background audio &amp; lock screen</h1>
+
+    <div class="steps">
+      <strong>Procedure</strong>
+      <ol>
+        <li>Open this page in Safari on the iPhone and <em>Add to Home Screen</em>.</li>
+        <li>Launch it from the home screen icon (not the browser tab).</li>
+        <li>Press Play, then lock the phone.</li>
+        <li>Wait 10 minutes. Check the lock screen shows title, artwork and a scrubber.</li>
+        <li>Try the lock-screen play/pause and the ±30s skip buttons.</li>
+        <li>Unlock and read the log below — it records every gap in playback.</li>
+      </ol>
+      <p><strong>Pass:</strong> audio never stops, no gap over 2s, and lock-screen controls work.</p>
+    </div>
+
+    <label for="src">Audio URL (any CORS-enabled MP3; the default is a LibriVox track)</label>
+    <input
+      id="src"
+      type="url"
+      value="https://archive.org/download/count_monte_cristo_0711_librivox/count_of_monte_cristo_001_dumas_64kb.mp3"
+    />
+
+    <div class="row">
+      <button id="play">Play</button>
+      <button id="pause">Pause</button>
+      <button id="reset">Reset log</button>
+    </div>
+
+    <div id="verdict" class="verdict">Not started.</div>
+    <div id="log"></div>
+
+    <script>
+      // The element is created once and never replaced — that is the thing
+      // under test. Creating a new <audio> while backgrounded loses the audio
+      // session and playback dies silently.
+      const audio = document.createElement('audio')
+      audio.preload = 'metadata'
+      audio.setAttribute('playsinline', '')
+      document.body.append(audio)
+
+      const logEl = document.getElementById('log')
+      const verdictEl = document.getElementById('verdict')
+      const lines = []
+
+      function log(message) {
+        const stamp = new Date().toLocaleTimeString()
+        lines.push(`${stamp}  ${message}`)
+        logEl.textContent = lines.slice(-300).join('\n')
+        logEl.scrollTop = logEl.scrollHeight
+      }
+
+      // The real test: does time keep advancing while the screen is off?
+      let lastTick = 0
+      let lastWall = 0
+      let maxGap = 0
+      let started = 0
+
+      audio.addEventListener('timeupdate', () => {
+        const wall = Date.now()
+        if (lastWall) {
+          const wallGap = (wall - lastWall) / 1000
+          const mediaGap = audio.currentTime - lastTick
+          // A gap in wall-clock time with no matching media progress means
+          // playback was suspended.
+          if (wallGap > 2 && mediaGap < wallGap * 0.5) {
+            maxGap = Math.max(maxGap, wallGap)
+            log(`GAP ${wallGap.toFixed(1)}s wall vs ${mediaGap.toFixed(1)}s media`)
+            updateVerdict()
+          }
+        }
+        lastWall = wall
+        lastTick = audio.currentTime
+      })
+
+      for (const event of ['play', 'pause', 'ended', 'stalled', 'waiting', 'suspend', 'error']) {
+        audio.addEventListener(event, () => {
+          log(`event: ${event}${event === 'error' ? ` (${audio.error?.code})` : ''}`)
+          if (event === 'pause' || event === 'stalled') updateVerdict()
+        })
+      }
+
+      document.addEventListener('visibilitychange', () => {
+        log(`visibility: ${document.visibilityState}`)
+      })
+
+      function updateVerdict() {
+        const minutes = started ? (Date.now() - started) / 60000 : 0
+        const ok = maxGap < 2 && !audio.paused
+        verdictEl.className = `verdict ${ok ? 'pass' : 'fail'}`
+        verdictEl.textContent = ok
+          ? `Playing ${minutes.toFixed(1)} min with no gap over 2s. Keep going to 10 min.`
+          : `Largest gap: ${maxGap.toFixed(1)}s${audio.paused ? ' · currently paused' : ''}. Playing ${minutes.toFixed(1)} min.`
+      }
+
+      setInterval(updateVerdict, 5000)
+
+      document.getElementById('play').addEventListener('click', async () => {
+        const src = document.getElementById('src').value
+        if (audio.src !== src) {
+          audio.src = src
+          log(`src set: ${src}`)
+        }
+        try {
+          await audio.play()
+          started = started || Date.now()
+          log('play() resolved')
+        } catch (error) {
+          log(`play() rejected: ${error.name} — ${error.message}`)
+        }
+        setUpMediaSession()
+      })
+
+      document.getElementById('pause').addEventListener('click', () => audio.pause())
+      document.getElementById('reset').addEventListener('click', () => {
+        lines.length = 0
+        maxGap = 0
+        started = 0
+        logEl.textContent = ''
+      })
+
+      function setUpMediaSession() {
+        if (!('mediaSession' in navigator)) {
+          log('Media Session API: UNSUPPORTED')
+          return
+        }
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: 'Chapter 1 — Marseilles, The Arrival',
+          artist: 'Alexandre Dumas',
+          album: 'The Count of Monte Cristo',
+          artwork: [
+            {
+              src: 'https://archive.org/services/img/count_monte_cristo_0711_librivox',
+              sizes: '512x512',
+              type: 'image/jpeg',
+            },
+          ],
+        })
+
+        const handlers = {
+          play: () => { audio.play(); log('lock screen: play') },
+          pause: () => { audio.pause(); log('lock screen: pause') },
+          seekbackward: () => { audio.currentTime -= 15; log('lock screen: back 15') },
+          seekforward: () => { audio.currentTime += 30; log('lock screen: forward 30') },
+          seekto: (details) => {
+            if (details.seekTime != null) audio.currentTime = details.seekTime
+            log(`lock screen: seek to ${details.seekTime}`)
+          },
+        }
+        for (const [action, handler] of Object.entries(handlers)) {
+          try {
+            navigator.mediaSession.setActionHandler(action, handler)
+          } catch {
+            log(`action unsupported: ${action}`)
+          }
+        }
+        log('Media Session configured')
+      }
+
+      // setPositionState drives the lock-screen scrubber. Throttled to ~1/sec.
+      let lastPosition = 0
+      audio.addEventListener('timeupdate', () => {
+        if (!navigator.mediaSession?.setPositionState) return
+        const now = Date.now()
+        if (now - lastPosition < 1000) return
+        lastPosition = now
+        if (!Number.isFinite(audio.duration) || audio.duration <= 0) return
+        try {
+          navigator.mediaSession.setPositionState({
+            duration: audio.duration,
+            playbackRate: audio.playbackRate,
+            position: Math.min(audio.currentTime, audio.duration),
+          })
+        } catch (error) {
+          log(`setPositionState threw: ${error.message}`)
+        }
+      })
+
+      log(`standalone: ${window.matchMedia('(display-mode: standalone)').matches}`)
+      log(`mediaSession: ${'mediaSession' in navigator}`)
+    </script>
+  </body>
+</html>

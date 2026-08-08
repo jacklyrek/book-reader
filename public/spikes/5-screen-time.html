@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Spike 5 — Screen Time / content filter</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <link rel="manifest" href="/spikes/manifest.webmanifest" />
+    <style>
+      :root { color-scheme: light dark; }
+      body { font: 16px/1.5 -apple-system, system-ui, sans-serif; margin: 0 auto; padding: 20px; max-width: 40rem; }
+      h1 { font-size: 20px; }
+      .ok { background: #3f7d4f33; padding: 14px; border-radius: 10px; font-weight: 600; }
+      table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 16px; }
+      td { padding: 6px 0; border-bottom: 1px solid #8883; }
+      td:last-child { text-align: right; font: 12px ui-monospace, Menlo, monospace; }
+      .steps { font-size: 14px; background: #8a4b2a22; border-left: 3px solid #8a4b2a; padding: 12px 14px; }
+      button { font: inherit; min-height: 44px; padding: 0 16px; border-radius: 10px; border: 1px solid #8886; background: transparent; color: inherit; }
+    </style>
+  </head>
+  <body>
+    <h1>Spike 5 — Screen Time</h1>
+
+    <p class="ok">If you can read this on the iPhone, this domain is not blocked.</p>
+
+    <div class="steps">
+      The commonplace book app needed its domain allowlisted under Screen Time's web filter. Use the
+      same domain or a subdomain of it and that allowlisting carries over — otherwise you'll be doing
+      it again. Also check each upstream the app talks to, below: a filter that allows your domain
+      but blocks archive.org still breaks audio streaming.
+    </div>
+
+    <button id="check">Check upstream hosts</button>
+    <table id="results"></table>
+
+    <script>
+      const HOSTS = [
+        ['gutendex.com', 'https://gutendex.com/books?ids=1'],
+        ['archive.org', 'https://archive.org/metadata/count_monte_cristo_0711_librivox'],
+        ['standardebooks.org', 'https://standardebooks.org/feeds/atom/new-releases'],
+        ['librivox.org', 'https://librivox.org/api/feed/audiobooks/?format=json&limit=1'],
+        ['covers.openlibrary.org', 'https://covers.openlibrary.org/b/id/240727-S.jpg'],
+      ]
+
+      document.getElementById('check').addEventListener('click', async () => {
+        const table = document.getElementById('results')
+        table.innerHTML = ''
+        for (const [host, url] of HOSTS) {
+          const row = table.insertRow()
+          row.insertCell().textContent = host
+          const cell = row.insertCell()
+          cell.textContent = 'checking…'
+          const started = performance.now()
+          try {
+            // no-cors so a CORS rejection doesn't masquerade as a block: an
+            // opaque response still proves the request reached the network.
+            await fetch(url, { mode: 'no-cors', cache: 'no-store' })
+            cell.textContent = `reachable (${(performance.now() - started).toFixed(0)}ms)`
+          } catch (error) {
+            cell.textContent = `BLOCKED — ${error.message}`
+          }
+        }
+      })
+    </script>
+  </body>
+</html>

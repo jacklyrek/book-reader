@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Spike 2 — Storage quota</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <link rel="manifest" href="/spikes/manifest.webmanifest" />
+    <style>
+      :root { color-scheme: light dark; }
+      body { font: 16px/1.5 -apple-system, system-ui, sans-serif; margin: 0 auto; padding: 20px; max-width: 40rem; }
+      h1 { font-size: 20px; }
+      button { font: inherit; min-height: 44px; padding: 0 16px; border-radius: 10px; border: 1px solid #8886; background: transparent; color: inherit; }
+      .row { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+      #log { font: 12px/1.4 ui-monospace, Menlo, monospace; white-space: pre-wrap; background: #8881; padding: 10px; border-radius: 8px; max-height: 40vh; overflow: auto; }
+      .stat { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 14px; margin: 12px 0; }
+      .stat dt { color: #888; }
+      .stat dd { margin: 0; }
+      .steps { font-size: 14px; background: #8a4b2a22; border-left: 3px solid #8a4b2a; padding: 12px 14px; }
+      progress { width: 100%; }
+    </style>
+  </head>
+  <body>
+    <h1>Spike 2 — Storage quota</h1>
+
+    <div class="steps">
+      <strong>Procedure</strong>
+      <ol>
+        <li>Install to the home screen and open from there.</li>
+        <li>Press <em>Request persistent</em>, then <em>Write 500 MB</em>.</li>
+        <li>Note the reported quota. A single audiobook is 100–400 MB.</li>
+        <li><strong>Reboot the phone</strong>, reopen, press <em>Verify</em>.</li>
+      </ol>
+      <p><strong>Pass:</strong> 500 MB writes without error, and every chunk survives a reboot.</p>
+    </div>
+
+    <dl class="stat">
+      <dt>Usage</dt><dd id="usage">—</dd>
+      <dt>Quota</dt><dd id="quota">—</dd>
+      <dt>Persisted</dt><dd id="persisted">—</dd>
+      <dt>Standalone</dt><dd id="standalone">—</dd>
+    </dl>
+
+    <progress id="progress" value="0" max="1"></progress>
+
+    <div class="row">
+      <button id="persist">Request persistent</button>
+      <button id="write">Write 500 MB</button>
+      <button id="verify">Verify</button>
+      <button id="clear">Clear</button>
+    </div>
+
+    <div id="log"></div>
+
+    <script>
+      const DB = 'spike-storage'
+      const STORE = 'blobs'
+      const CHUNK_MB = 10
+      const TARGET_MB = 500
+
+      const logEl = document.getElementById('log')
+      const lines = []
+      function log(message) {
+        lines.push(`${new Date().toLocaleTimeString()}  ${message}`)
+        logEl.textContent = lines.slice(-300).join('\n')
+        logEl.scrollTop = logEl.scrollHeight
+      }
+
+      const mb = (bytes) => `${(bytes / 1024 / 1024).toFixed(1)} MB`
+
+      function open() {
+        return new Promise((resolve, reject) => {
+          const request = indexedDB.open(DB, 1)
+          request.onupgradeneeded = () => request.result.createObjectStore(STORE)
+          request.onsuccess = () => resolve(request.result)
+          request.onerror = () => reject(request.error)
+        })
+      }
+
+      function tx(db, mode) {
+        return db.transaction(STORE, mode).objectStore(STORE)
+      }
+
+      async function refresh() {
+        const estimate = (await navigator.storage?.estimate?.()) ?? {}
+        document.getElementById('usage').textContent = mb(estimate.usage ?? 0)
+        document.getElementById('quota').textContent = estimate.quota
+          ? `${mb(estimate.quota)} (${((estimate.usage ?? 0) / estimate.quota * 100).toFixed(1)}% used)`
+          : 'unreported'
+        document.getElementById('persisted').textContent = String(
+          (await navigator.storage?.persisted?.()) ?? 'unsupported',
+        )
+        document.getElementById('standalone').textContent = String(
+          window.matchMedia('(display-mode: standalone)').matches,
+        )
+      }
+
+      document.getElementById('persist').addEventListener('click', async () => {
+        const granted = await navigator.storage?.persist?.()
+        log(`persist(): ${granted}`)
+        await refresh()
+      })
+
+      document.getElementById('write').addEventListener('click', async () => {
+        const db = await open()
+        const chunkBytes = CHUNK_MB * 1024 * 1024
+        const total = TARGET_MB / CHUNK_MB
+        // Incompressible data, so Safari can't quietly deflate it and flatter
+        // the numbers.
+        const source = new Uint8Array(chunkBytes)
+        crypto.getRandomValues(source.subarray(0, 65536))
+        for (let offset = 65536; offset < chunkBytes; offset += 65536) {
+          source.copyWithin(offset, 0, 65536)
+        }
+
+        for (let i = 0; i < total; i++) {
+          try {
+            await new Promise((resolve, reject) => {
+              const store = tx(db, 'readwrite')
+              const request = store.put(new Blob([source]), `chunk-${i}`)
+              request.onsuccess = resolve
+              request.onerror = () => reject(request.error)
+              store.transaction.onabort = () => reject(store.transaction.error)
+            })
+          } catch (error) {
+            log(`FAILED at chunk ${i} (${mb(i * chunkBytes)}): ${error?.name} ${error?.message}`)
+            await refresh()
+            return
+          }
+          document.getElementById('progress').value = (i + 1) / total
+          if ((i + 1) % 5 === 0) {
+            log(`wrote ${mb((i + 1) * chunkBytes)}`)
+            await refresh()
+          }
+        }
+        log(`wrote all ${TARGET_MB} MB`)
+        await refresh()
+      })
+
+      document.getElementById('verify').addEventListener('click', async () => {
+        const db = await open()
+        const keys = await new Promise((resolve, reject) => {
+          const request = tx(db, 'readonly').getAllKeys()
+          request.onsuccess = () => resolve(request.result)
+          request.onerror = () => reject(request.error)
+        })
+        let bytes = 0
+        for (const key of keys) {
+          const blob = await new Promise((resolve) => {
+            const request = tx(db, 'readonly').get(key)
+            request.onsuccess = () => resolve(request.result)
+            request.onerror = () => resolve(null)
+          })
+          if (blob) bytes += blob.size
+        }
+        log(`verified ${keys.length} chunks, ${mb(bytes)} readable`)
+        if (keys.length < TARGET_MB / CHUNK_MB) {
+          log(`WARNING: expected ${TARGET_MB / CHUNK_MB} chunks — storage was evicted`)
+        }
+        await refresh()
+      })
+
+      document.getElementById('clear').addEventListener('click', async () => {
+        indexedDB.deleteDatabase(DB)
+        log('database deleted')
+        setTimeout(refresh, 500)
+      })
+
+      refresh()
+    </script>
+  </body>
+</html>

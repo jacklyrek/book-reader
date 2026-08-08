@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Spike 4 — SW range serving</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <link rel="manifest" href="/spikes/manifest.webmanifest" />
+    <style>
+      :root { color-scheme: light dark; }
+      body { font: 16px/1.5 -apple-system, system-ui, sans-serif; margin: 0 auto; padding: 20px; max-width: 40rem; }
+      h1 { font-size: 20px; }
+      button { font: inherit; min-height: 44px; padding: 0 16px; border-radius: 10px; border: 1px solid #8886; background: transparent; color: inherit; }
+      .row { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+      input[type=url] { font-size: 16px; width: 100%; min-height: 44px; padding: 0 10px; border-radius: 10px; border: 1px solid #8886; background: transparent; color: inherit; }
+      #log { font: 12px/1.4 ui-monospace, Menlo, monospace; white-space: pre-wrap; background: #8881; padding: 10px; border-radius: 8px; max-height: 44vh; overflow: auto; }
+      .steps { font-size: 14px; background: #8a4b2a22; border-left: 3px solid #8a4b2a; padding: 12px 14px; }
+      audio { width: 100%; margin: 12px 0; }
+    </style>
+  </head>
+  <body>
+    <h1>Spike 4 — Service worker range serving</h1>
+
+    <div class="steps">
+      <strong>Procedure</strong>
+      <ol>
+        <li><em>Register SW</em>, then <em>Download &amp; store</em> (~30 MB LibriVox track).</li>
+        <li><em>Run range tests</em> — checks 206 status, Content-Range and Content-Length.</li>
+        <li><em>Attach to audio</em>, then drag the scrubber to 90%.</li>
+      </ol>
+      <p>
+        <strong>Pass:</strong> every range test returns 206 with the right byte count, and seeking to
+        90% starts playing in well under a second — no full-file download first.
+      </p>
+    </div>
+
+    <label for="src">Source MP3</label>
+    <input
+      id="src"
+      type="url"
+      value="https://archive.org/download/count_monte_cristo_0711_librivox/count_of_monte_cristo_001_dumas_64kb.mp3"
+    />
+
+    <div class="row">
+      <button id="register">Register SW</button>
+      <button id="download">Download &amp; store</button>
+      <button id="test">Run range tests</button>
+      <button id="attach">Attach to audio</button>
+    </div>
+
+    <audio id="player" controls preload="metadata" playsinline></audio>
+    <div id="log"></div>
+
+    <script>
+      const ASSET_ID = 'spike-track'
+      const logEl = document.getElementById('log')
+      const lines = []
+      function log(message) {
+        lines.push(`${new Date().toLocaleTimeString()}  ${message}`)
+        logEl.textContent = lines.slice(-300).join('\n')
+        logEl.scrollTop = logEl.scrollHeight
+      }
+      const mb = (bytes) => `${(bytes / 1024 / 1024).toFixed(2)} MB`
+
+      document.getElementById('register').addEventListener('click', async () => {
+        try {
+          const registration = await navigator.serviceWorker.register('/spikes/sw-range.js', {
+            scope: '/spikes/',
+          })
+          await navigator.serviceWorker.ready
+          log(`SW registered, scope ${registration.scope}`)
+        } catch (error) {
+          log(`SW registration FAILED: ${error.message}`)
+        }
+      })
+
+      function open() {
+        return new Promise((resolve, reject) => {
+          const request = indexedDB.open('spike-range', 1)
+          request.onupgradeneeded = () => request.result.createObjectStore('assets')
+          request.onsuccess = () => resolve(request.result)
+          request.onerror = () => reject(request.error)
+        })
+      }
+
+      document.getElementById('download').addEventListener('click', async () => {
+        const url = document.getElementById('src').value
+        log('fetching…')
+        const started = Date.now()
+        const response = await fetch(url)
+        if (!response.ok) return log(`fetch failed: HTTP ${response.status}`)
+        const blob = await response.blob()
+        const db = await open()
+        await new Promise((resolve, reject) => {
+          const request = db
+            .transaction('assets', 'readwrite')
+            .objectStore('assets')
+            .put({ blob, mime: blob.type || 'audio/mpeg' }, ASSET_ID)
+          request.onsuccess = resolve
+          request.onerror = () => reject(request.error)
+        })
+        log(`stored ${mb(blob.size)} in ${((Date.now() - started) / 1000).toFixed(1)}s`)
+      })
+
+      document.getElementById('test').addEventListener('click', async () => {
+        const base = `/spikes/media/${ASSET_ID}`
+
+        const head = await fetch(base, { method: 'HEAD' })
+        const size = Number(head.headers.get('content-length'))
+        log(`HEAD → ${head.status}, size ${mb(size)}, accept-ranges=${head.headers.get('accept-ranges')}`)
+        if (!size) return log('FAIL: no size — did the download step run?')
+
+        const cases = [
+          { label: 'first 1 KB', header: 'bytes=0-1023', expect: 1024 },
+          { label: 'middle 64 KB', header: `bytes=${Math.floor(size / 2)}-${Math.floor(size / 2) + 65535}`, expect: 65536 },
+          { label: 'open-ended tail', header: `bytes=${size - 5000}-`, expect: 5000 },
+          { label: 'suffix range', header: 'bytes=-2048', expect: 2048 },
+          { label: 'past the end', header: `bytes=${size + 10}-`, expect: 0, wantStatus: 416 },
+        ]
+
+        for (const testCase of cases) {
+          const started = performance.now()
+          const response = await fetch(base, { headers: { Range: testCase.header } })
+          const body = response.status === 416 ? new ArrayBuffer(0) : await response.arrayBuffer()
+          const elapsed = (performance.now() - started).toFixed(0)
+          const wantStatus = testCase.wantStatus ?? 206
+          const ok = response.status === wantStatus && body.byteLength === testCase.expect
+          log(
+            `${ok ? 'PASS' : 'FAIL'}  ${testCase.label}: ${response.status} ` +
+              `${body.byteLength}B (want ${wantStatus}/${testCase.expect}B) ` +
+              `range="${response.headers.get('content-range') ?? '—'}" ${elapsed}ms`,
+          )
+        }
+      })
+
+      document.getElementById('attach').addEventListener('click', () => {
+        const player = document.getElementById('player')
+        // The point of the exercise: a normal URL, not a blob: URL.
+        player.src = `/spikes/media/${ASSET_ID}`
+        player.load()
+        log('audio.src set to the SW-served URL — now drag the scrubber to ~90%')
+
+        let seekStarted = 0
+        player.addEventListener('seeking', () => {
+          seekStarted = performance.now()
+          log(`seeking to ${player.currentTime.toFixed(1)}s`)
+        })
+        player.addEventListener('seeked', () => {
+          log(`seeked in ${(performance.now() - seekStarted).toFixed(0)}ms`)
+        })
+      })
+    </script>
+  </body>
+</html>

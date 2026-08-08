@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="An open book">
+  <rect width="512" height="512" fill="#12100e" />
+  <g>
+    <rect x="82" y="96" width="348" height="320" rx="20" fill="#faf7f2" />
+    <rect x="246" y="96" width="20" height="320" fill="#8a4b2a" />
+    <g fill="#d0c6b6">
+      <rect x="110" y="132" width="118" height="8" />
+      <rect x="110" y="166" width="118" height="8" />
+      <rect x="110" y="200" width="118" height="8" />
+      <rect x="110" y="234" width="118" height="8" />
+      <rect x="110" y="268" width="118" height="8" />
+      <rect x="110" y="302" width="118" height="8" />
+      <rect x="110" y="336" width="118" height="8" />
+      <rect x="110" y="370" width="62" height="8" />
+      <rect x="284" y="132" width="118" height="8" />
+      <rect x="284" y="166" width="118" height="8" />
+      <rect x="284" y="200" width="118" height="8" />
+      <rect x="284" y="234" width="118" height="8" />
+      <rect x="284" y="268" width="118" height="8" />
+      <rect x="284" y="302" width="118" height="8" />
+      <rect x="284" y="336" width="118" height="8" />
+      <rect x="284" y="370" width="62" height="8" />
+    </g>
+  </g>
+</svg>

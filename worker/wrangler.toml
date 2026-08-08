@@ -1,0 +1,20 @@
+name = "pdr-proxy"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+# The app's origin(s). The Worker refuses requests from anywhere else, which is
+# what keeps this from being a general open proxy (§6.1).
+[vars]
+ALLOWED_ORIGINS = "https://reader.example.com,http://localhost:5173"
+REQUIRE_SIGNATURE = "true"
+
+# Secrets — set with `wrangler secret put NAME`, never in this file:
+#   PROXY_HMAC_KEY   must match the app's VITE_PROXY_HMAC_KEY
+#   SE_OPDS_EMAIL    Patrons Circle email, for the Standard Ebooks bulk feed
+
+[observability]
+enabled = true
+
+[[routes]]
+pattern = "proxy.example.com/*"
+custom_domain = true
