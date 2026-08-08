@@ -33,6 +33,11 @@ jobs:
       - name: Configure Pages
         id: pages
         uses: actions/configure-pages@v5
+        with:
+          # Create the Pages site via the API if it doesn't exist yet, instead
+          # of failing with "Get Pages site failed". Needs the `pages: write`
+          # permission above — and, on the Free plan, a public repository.
+          enablement: true
 
       - name: Build
         env:
