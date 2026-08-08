@@ -4,7 +4,13 @@
  * The design's recommendation is not to query three APIs live per search, and
  * that's right — the Supabase index is the production path. But the app has to
  * work before that index exists, so there are two adapters behind one
- * interface and the choice is made by whether Supabase is configured.
+ * interface.
+ *
+ * Choosing the Supabase adapter is gated separately from `supabaseConfigured`
+ * (which only means "sync/auth are available"): the catalog tables need the
+ * ingest job to have populated them first, and a Supabase project set up
+ * purely for cross-device sync shouldn't silently blank out search. Opt in
+ * with `VITE_SUPABASE_CATALOG=true` once the index is actually built.
  */
 import type { CatalogWork } from '../core/types'
 import {
@@ -146,7 +152,10 @@ async function settle<T>(promise: Promise<T[]>): Promise<T[]> {
   }
 }
 
-export const catalog: CatalogAdapter = supabaseConfigured ? supabaseCatalog : liveCatalog
+const catalogIndexEnabled =
+  supabaseConfigured && (import.meta.env.VITE_SUPABASE_CATALOG as string | undefined) === 'true'
+
+export const catalog: CatalogAdapter = catalogIndexEnabled ? supabaseCatalog : liveCatalog
 
 export { liveCatalog }
 
