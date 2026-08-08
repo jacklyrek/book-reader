@@ -5,7 +5,7 @@
     <title>Spikes — Public Domain Reader</title>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <link rel="manifest" href="/spikes/manifest.webmanifest" />
+    <link rel="manifest" href="./manifest.webmanifest" />
     <style>
       :root { color-scheme: light dark; }
       body {
@@ -34,34 +34,34 @@
 
     <ol>
       <li>
-        <a href="/spikes/1-background-audio.html">1 · Background audio &amp; lock screen</a>
+        <a href="./1-background-audio.html">1 · Background audio &amp; lock screen</a>
         <p>
           One audio element, one MP3, Media Session. Install to home screen, start playback, lock the
           phone. Does it keep playing for 10 minutes? Do the lock screen controls appear and work?
         </p>
       </li>
       <li>
-        <a href="/spikes/2-storage-quota.html">2 · Storage quota</a>
+        <a href="./2-storage-quota.html">2 · Storage quota</a>
         <p>
           Write 500 MB of blobs to IndexedDB in a chunked loop, check <code>estimate()</code>, then
           reboot the phone and verify the bytes are still there.
         </p>
       </li>
       <li>
-        <a href="/spikes/3-foliate.html">3 · foliate-js on iOS Safari</a>
+        <a href="./3-foliate.html">3 · foliate-js on iOS Safari</a>
         <p>
           Render an EPUB, paginate, change font size, verify a CFI round-trips through a reload.
         </p>
       </li>
       <li>
-        <a href="/spikes/4-sw-range.html">4 · Service worker range serving</a>
+        <a href="./4-sw-range.html">4 · Service worker range serving</a>
         <p>
           Serve a large MP3 from IndexedDB through the SW. Verify 206 responses and that seeking to
           90% is instant rather than downloading the whole file first.
         </p>
       </li>
       <li>
-        <a href="/spikes/5-screen-time.html">5 · Screen Time / content filter</a>
+        <a href="./5-screen-time.html">5 · Screen Time / content filter</a>
         <p>Confirm this domain loads under your existing restrictions.</p>
       </li>
     </ol>

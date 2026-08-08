@@ -24,9 +24,19 @@ With no configuration the app runs **local-only**: it queries the public APIs
 directly, keeps everything on-device, and skips sync. Two things are worth
 setting up when you're ready — see [Configuration](#configuration).
 
-> **Node isn't installed on this machine.** The toolchain was fetched into a
-> scratch directory to build and test this. Install Node 20+ (`brew install
-> node`) before running the commands above.
+### Node
+
+Node 24.19.0 (LTS) is installed at `~/.local/lib/node-v24.19.0`, with `node`,
+`npm`, `npx` and `corepack` symlinked into `~/.local/bin` — already on your
+PATH. No Homebrew, no sudo, nothing outside your home directory.
+
+```bash
+rm -rf ~/.local/lib/node-v24.19.0 ~/.local/bin/{node,npm,npx,corepack}   # to remove
+```
+
+To upgrade later, download a newer build from
+[nodejs.org/dist](https://nodejs.org/dist/), verify it against that release's
+`SHASUMS256.txt`, extract into `~/.local/lib/`, and repoint the four symlinks.
 
 ## Do the spikes first
 
@@ -94,6 +104,38 @@ LibriVox sections 1:1 where the counts match, by fuzzy title match where they
 don't, and proportionally as a last resort. The UI tells you which happened,
 because the third case is a guess. Forced alignment is explicitly not v1.
 
+## Hosting on GitHub Pages
+
+Works, and [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) does
+it on every push to `main` (build → test → deploy). Enable it under
+**Settings → Pages → Source: GitHub Actions**. Pages serves HTTPS, which is
+what service workers and home-screen install require, and the app uses a hash
+router so there's no SPA-rewrite problem.
+
+**But pick your repo shape deliberately — it decides your storage quota.**
+
+| Shape | URL | Verdict |
+|---|---|---|
+| Custom domain | `reader.yourdomain.com` | **Best.** Own origin, own quota, root path. §3.1 wants a subdomain of the commonplace book's domain anyway, so the Screen Time allowlisting carries over. |
+| User site | `jacklyrek.github.io` | Fine if this is the only thing there. |
+| Project site | `jacklyrek.github.io/book-reader/` | Works, but shares an origin with every other repo you serve from `github.io`. |
+
+That last row is the real caveat. **Storage quota is per-origin, not per-path.**
+Every project site on `jacklyrek.github.io` shares one quota, one IndexedDB
+namespace, and one service worker scope — so this app's audiobooks compete for
+space with the commonplace book app, and §7.1's storage budget stops being
+yours alone. A single LibriVox recording is 100–400 MB; that's not a pool worth
+sharing.
+
+A custom domain fixes it: add a `CNAME` file to `public/`, point DNS at Pages,
+and the build automatically drops the base path. Then add that origin to the
+Worker's `ALLOWED_ORIGINS` and to Supabase's redirect allowlist.
+
+The subpath case is fully supported regardless — `VITE_BASE` flows through the
+service worker registration, its scope, and `/media/{assetId}`, all of which
+must sit under the scope or offline audio silently stops working. Both shapes
+are verified in the build.
+
 ## Configuration
 
 Copy `.env.example` to `.env`. Everything is optional.
@@ -160,10 +202,11 @@ change if you'd rather go the other way.
 
 ## Status
 
-Built and verified: type-checks clean, 47 tests pass, production build succeeds,
-`dist/sw.js` is self-contained. **Nothing has been exercised on an actual
-iPhone** — every iOS-specific behaviour in §3.1 is still a hypothesis, which is
-what the spikes are for. Run those before trusting the rest.
+Built and verified on this machine: type-checks clean (app and Worker), 47 tests
+pass, production build succeeds, `dist/sw.js` is self-contained. **Nothing has
+been exercised on an actual iPhone** — every iOS-specific behaviour in §3.1 is
+still a hypothesis, which is what the spikes are for. Run those before trusting
+the rest.
 
 Against the milestones (§9): M1–M5 are implemented in code. M0 is the gate that
 hasn't been run.

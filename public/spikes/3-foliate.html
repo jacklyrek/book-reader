@@ -5,7 +5,7 @@
     <title>Spike 3 — foliate-js on iOS</title>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <link rel="manifest" href="/spikes/manifest.webmanifest" />
+    <link rel="manifest" href="./manifest.webmanifest" />
     <style>
       :root { color-scheme: light dark; }
       body { font: 16px/1.5 -apple-system, system-ui, sans-serif; margin: 0; padding: 16px; }
@@ -69,12 +69,15 @@
       async function open(file) {
         const started = performance.now()
         try {
-          // Served from the app's own node_modules copy by the dev server; in a
-          // deployed build this path comes from the bundler instead.
-          await import('/node_modules/foliate-js/view.js')
+          // Dev server serves node_modules from the root; a deployed build has
+          // foliate-js bundled into the app's own chunks instead, so fall back
+          // to the CDN copy when this spike is opened from a static host.
+          await import('/node_modules/foliate-js/view.js').catch(() =>
+            import('https://esm.sh/foliate-js@1.0.1/view.js'),
+          )
         } catch (error) {
           log(`FAILED to import foliate-js: ${error.message}`)
-          log('Run this spike from `npm run dev`, which serves /node_modules.')
+          log('Run this spike from `npm run dev`, or allow esm.sh through any content filter.')
           return
         }
 

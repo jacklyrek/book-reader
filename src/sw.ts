@@ -19,10 +19,18 @@ declare const self: ServiceWorkerGlobalScope
 
 const DB_NAME = 'pdr'
 const ASSET_STORE = 'assets'
-const MEDIA_PREFIX = '/media/'
+
+/**
+ * Everything this worker serves is relative to its registered scope — `/` at
+ * the origin root, `/<repo>/` on a GitHub project site. Taking it from
+ * `registration.scope` rather than hardcoding `/` is what lets the same build
+ * work under a subpath.
+ */
+const SCOPE_PATH = new URL(self.registration.scope).pathname
+const MEDIA_PREFIX = `${SCOPE_PATH}media/`
 
 const SHELL_CACHE = 'pdr-shell-v1'
-const SHELL_URLS = ['/', '/index.html', '/manifest.webmanifest']
+const SHELL_URLS = [SCOPE_PATH, `${SCOPE_PATH}index.html`, `${SCOPE_PATH}manifest.webmanifest`]
 
 // ---------------------------------------------------------------------------
 // Install / activate
@@ -172,10 +180,11 @@ async function handleNavigation(request: Request): Promise<Response> {
   try {
     const fresh = await fetch(request)
     const cache = await caches.open(SHELL_CACHE)
-    void cache.put('/', fresh.clone())
+    void cache.put(SCOPE_PATH, fresh.clone())
     return fresh
   } catch {
-    const cached = (await caches.match('/')) ?? (await caches.match('/index.html'))
+    const cached =
+      (await caches.match(SCOPE_PATH)) ?? (await caches.match(`${SCOPE_PATH}index.html`))
     return (
       cached ??
       new Response('<h1>Offline</h1><p>The app shell has not been cached yet.</p>', {
@@ -225,7 +234,10 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  if (url.pathname.startsWith('/assets/') || url.pathname.startsWith('/icons/')) {
+  if (
+    url.pathname.startsWith(`${SCOPE_PATH}assets/`) ||
+    url.pathname.startsWith(`${SCOPE_PATH}icons/`)
+  ) {
     event.respondWith(handleAsset(request).catch(() => fetch(request)))
   }
 })

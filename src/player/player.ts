@@ -77,8 +77,13 @@ let lastPositionState = 0
 let lastProgressSave = 0
 let fadeFrom = 1
 
+/**
+ * Must stay inside the service worker's scope, which is the deploy base — `/`
+ * at an origin root, `/<repo>/` on a GitHub project site. A URL outside that
+ * scope is never intercepted, and offline audio silently 404s.
+ */
 export function mediaUrl(assetId: string): string {
-  return `/media/${encodeURIComponent(assetId)}`
+  return `${import.meta.env.BASE_URL}media/${encodeURIComponent(assetId)}`
 }
 
 // ---------------------------------------------------------------------------

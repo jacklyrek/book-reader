@@ -14,9 +14,10 @@
     <meta name="apple-mobile-web-app-title" content="Reader" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="color-scheme" content="light dark" />
-    <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
-    <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
+    <!-- Relative, so the same build works at an origin root or under /<repo>/. -->
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+    <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
   </head>
   <body>
     <div id="app"></div>

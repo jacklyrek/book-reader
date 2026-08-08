@@ -45,12 +45,16 @@ async function registerServiceWorker(): Promise<void> {
     console.warn('[sw] unsupported — offline media will not play')
     return
   }
-  // In dev Vite serves the worker from source; the built file lands at /sw.js.
-  const url = import.meta.env.DEV ? '/src/sw.ts' : '/sw.js'
+  // In dev Vite serves the worker from source; the built file lands next to
+  // index.html, which is the origin root or `/<repo>/` on a project site.
+  const base = import.meta.env.BASE_URL
+  const url = import.meta.env.DEV ? '/src/sw.ts' : `${base}sw.js`
   try {
     const registration = await navigator.serviceWorker.register(url, {
       type: 'module',
-      scope: '/',
+      // A worker can never claim a scope broader than its own directory, so on
+      // a project site this is `/<repo>/` and every in-app URL must sit under it.
+      scope: import.meta.env.DEV ? '/' : base,
     })
     if (registration.waiting) {
       registration.waiting.postMessage({ type: 'SKIP_WAITING' })

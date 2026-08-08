@@ -22,6 +22,13 @@ function serviceWorkerScope(): Plugin {
 }
 
 export default defineConfig({
+  /**
+   * Root by default. A GitHub *project* site lives at `/<repo>/`, so the
+   * deploy workflow sets VITE_BASE. Everything that builds a URL at runtime —
+   * the service worker registration, its scope, and `/media/{assetId}` — reads
+   * `import.meta.env.BASE_URL` rather than assuming `/`.
+   */
+  base: process.env['VITE_BASE'] ?? '/',
   plugins: [serviceWorkerScope()],
   resolve: {
     alias: {
