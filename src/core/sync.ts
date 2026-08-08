@@ -21,7 +21,9 @@ import {
   putProgress,
   outboxSize,
 } from './db'
-import { mergeProgress } from './progress'
+import { libraryVersion } from './library'
+import { mergeProgress, progressVersion } from './progress'
+import { annotationVersion } from '../reader/annotations'
 import { settings, updateSetting } from './settings'
 import { createStore } from './store'
 import { authState, supabase } from './supabase-client'
@@ -263,12 +265,23 @@ async function pull(userId: string, since: number): Promise<void> {
     if (result.error) throw new Error(result.error.message)
   }
 
+  // These write straight to IndexedDB via `./db`, bypassing the `record`/
+  // `write`/`persist` wrappers that local edits go through — so, unlike a
+  // local edit, a pulled row doesn't bump the version store an open view
+  // reads from. Do that here, once per table, only if something changed:
+  // open Library/Shelves/Highlights views are otherwise none the wiser that
+  // new rows landed until the next full remount.
+  let libraryChanged = false
+  let progressChanged = false
+  let annotationsChanged = false
+
   for (const row of (libraryResult.data ?? []) as LibraryRow[]) {
     const remote = rowToBook(row)
     const local = await getBook(remote.bookId)
     if (!local || remote.updatedAt > local.updatedAt) {
       // Never let a stale remote row clobber tracks we've already resolved.
       await putBook({ ...local, ...remote, recording: remote.recording ?? local?.recording })
+      libraryChanged = true
     }
   }
 
@@ -278,13 +291,19 @@ async function pull(userId: string, since: number): Promise<void> {
     const merged = mergeProgress(local, remote)
     if (merged && (!local || merged.updatedAt !== local.updatedAt || merged !== local)) {
       await putProgress(merged)
+      progressChanged = true
     }
   }
 
   for (const row of (annotationResult.data ?? []) as AnnotationRow[]) {
     const remote = rowToAnnotation(row)
     await putAnnotation(remote)
+    annotationsChanged = true
   }
+
+  if (libraryChanged) libraryVersion.set((n) => n + 1)
+  if (progressChanged) progressVersion.set((n) => n + 1)
+  if (annotationsChanged) annotationVersion.set((n) => n + 1)
 }
 
 // ---------------------------------------------------------------------------
